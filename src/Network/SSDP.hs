@@ -6,16 +6,14 @@ module Network.SSDP
   ( -- * SSDP related types
     SSDP, Search, Notify
   , ST (..)
-  , Header (..)
+  , Header (..), HasHeader (..)
   , UserAgent, MX, MaxAge, Location, Server, BootId, ConfigId, Searchport
   , UUID, generateUUID, mkUUID
     -- * SSDP messages
   , ssdpSearch, ssdpSearchResponse
-  , getMX
     -- * Sending & receiving SSDP messages
   , sendNotify, sendSearch
-    -- * Rendering
-  , renderSSDP
+  , Renderable (..)
   ) where
 
 import           Control.Applicative
@@ -25,14 +23,14 @@ import qualified Control.Exception    as E
 import           Control.Monad
 import           Control.Monad.Trans
 
-import           Data.List
 import           Data.Maybe
 
 import           Network
 import qualified Network.Socket       as S
 import           Network.Multicast
 import           Network.SSDP.Parser
-import           Network.SSDP.Headers
+import           Network.SSDP.Headers ()
+import           Network.SSDP.Render ()
 import           Network.SSDP.Types
 import           Network.SSDP.UUID
 
@@ -50,7 +48,7 @@ sendNotify ssdp = liftIO $ do
 
   -- send ssdp:discover
   (sock, sockaddr) <- multicastSender ssdpAddr ssdpPort
-  _ <- S.sendTo sock (renderSSDP ssdp) sockaddr
+  _ <- S.sendTo sock (render ssdp) sockaddr
   S.sClose sock
 
 sendSearch
@@ -61,12 +59,12 @@ sendSearch
 sendSearch ssdp callback = liftIO $ do
 
   (sock, sockaddr) <- multicastSender ssdpAddr ssdpPort
-  _ <- S.sendTo sock (renderSSDP ssdp) sockaddr
+  _ <- S.sendTo sock (render ssdp) sockaddr
 
   results <- newTChanIO
   count   <- newTVarIO (0 :: Int)
 
-  let mx = getMX ssdp
+  let MX mx = get ssdp
 
   S.setSocketOption sock S.RecvTimeOut (mx * 1000)
 
@@ -125,11 +123,6 @@ sendSearch ssdp callback = liftIO $ do
 --------------------------------------------------------------------------------
 -- SSDP Messages
 
-getMX :: SSDP Search -> MX
-getMX (SSDP _ hdrs) =
-  let Just mx = findHeaderValueByName "MX" hdrs
-   in read mx
-
 ssdpSearch
   :: ST
   -> Maybe MX
@@ -139,9 +132,9 @@ ssdpSearch st mmx mua = SSDP
   "M-SEARCH * HTTP/1.1"
   [ "HOST"      :- "239.255.255.250:1900"
   , "MAN"       :- "\"ssdp:discover\""
-  , "ST"        :- renderST st
-  , "MX"        :- show mx
-  , "USERAGENU" :? mua
+  , "ST"        :- render st
+  , "MX"        :- render mx
+  , "USERAGENT" :? fmap render mua
   ]
  where
   mx = fromMaybe 3 mmx
@@ -158,37 +151,13 @@ ssdpSearchResponse
   -> SSDP Response
 ssdpSearchResponse loc srv maxAge st uuid mbid mcid msp = SSDP
   "HTTP/1.1 200 OK"
-  [ "LOCATION"              :- loc
-  , "SERVER"                :- srv
-  , "CACHE-CONTROL"         :- "max-age=" ++ show maxAge
+  [ "LOCATION"              :- render loc
+  , "SERVER"                :- render srv
+  , "CACHE-CONTROL"         :- "max-age=" ++ render maxAge
   , "EXT"                   :- ""
-  , "ST"                    :- renderST st
-  , "USN"                   :- "uuid:" ++ renderUUID uuid ++ "::" ++ renderST st
-  , "BOOTID.UPNP.ORG"       :? fmap show mbid
-  , "CONFIGID.UPNP.ORG"     :? fmap show mcid
-  , "SEARCHPORT.UPNP.ORG"   :? fmap show msp
+  , "ST"                    :- render st
+  , "USN"                   :- "uuid:" ++ render uuid ++ "::" ++ render st
+  , "BOOTID.UPNP.ORG"       :? fmap render mbid
+  , "CONFIGID.UPNP.ORG"     :? fmap render mcid
+  , "SEARCHPORT.UPNP.ORG"   :? fmap render msp
   ]
-
---------------------------------------------------------------------------------
--- Rendering
-
-renderSSDP :: SSDP a -> String
-renderSSDP ssdp = intercalate "\r\n" $
-  [ ssdpStartingLine ssdp ]
-  ++ mapMaybe renderHeader (ssdpHeaders ssdp)
-  ++ [ "\r\n" ]
-
-renderHeader :: Header -> Maybe String
-renderHeader (k :- x)       = Just $ k ++ ": " ++ x
-renderHeader (k :? Just x)  = renderHeader (k :- x)
-renderHeader (_ :? Nothing) = Nothing
-
-renderST :: ST -> String
-renderST st = case st of
-  SsdpAll -> "ssdp:all"
-  UpnpRootDevice -> "upnp:rootdevice"
-  UuidDevice uuid -> "uuid:" ++ renderUUID uuid
-  UrnDevice dom ty ver ->
-    "urn:" ++ dom ++ ":device:" ++ ty ++ ":" ++ ver
-  UrnService dom ty ver ->
-    "urn:" ++ dom ++ ":service:" ++ ty ++ ":" ++ ver

@@ -1,6 +1,7 @@
 module Network.SSDP.Parser
   ( parseSsdpSearchResponse
   , parseUUID
+  , parseST
   ) where
 
 import Control.Applicative
@@ -13,8 +14,24 @@ import Network.SSDP.Types
 parseUUID :: String -> Either ParseError UUID
 parseUUID = parse uuid "UUID"
 
+parseST :: String -> Either ParseError ST
+parseST = parse st "ST"
+
 parseSsdpSearchResponse :: String -> Either ParseError (SSDP Notify)
 parseSsdpSearchResponse = parse ssdpNotify "Search Response/SSDP Notify"
+
+st :: Parser ST
+st =
+  choice [ SsdpAll        <$  try (string "ssdp:all")
+         , UpnpRootDevice <$  try (string "upnp:rootdevice")
+         , UuidDevice     <$> try (string "uuid:" *> uuid)
+         , UrnDevice      <$> try (string "urn:" *> manyTill anyChar (string ":device:"))
+                          <*> manyTill anyChar colon
+                          <*> many anyChar
+         , UrnService     <$> try (string "urn:" *> manyTill anyChar (string ":service:"))
+                          <*> manyTill anyChar colon
+                          <*> many anyChar
+         ]
 
 ssdpNotify :: Parser (SSDP Notify)
 ssdpNotify = do

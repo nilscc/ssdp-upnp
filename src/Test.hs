@@ -12,7 +12,7 @@ discover = do
   callback from msg = return (from, msg)
   put (from, msg) =
     putStrLn $ "\nMsg [ " ++ show from ++ " ]:\n\n"
-               ++ renderSSDP msg
+               ++ render msg
 
 main :: IO ()
 main = withSocketsDo $ do
