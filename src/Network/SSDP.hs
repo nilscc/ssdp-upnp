@@ -45,12 +45,12 @@ ssdpAddr :: HostName
 ssdpAddr = "239.255.255.250"
 
 sendNotify :: MonadIO m => SSDP Notify -> m ()
-sendNotify ssdp = do
+sendNotify ssdp = liftIO $ do
 
   -- send ssdp:discover
-  (sock, sockaddr) <- liftIO $ multicastSender ssdpAddr ssdpPort
-  _ <- liftIO $ S.sendTo sock (renderSSDP ssdp) sockaddr
-  return ()
+  (sock, sockaddr) <- multicastSender ssdpAddr ssdpPort
+  _ <- S.sendTo sock (renderSSDP ssdp) sockaddr
+  S.sClose sock
 
 sendSearch
   :: MonadIO m
@@ -67,13 +67,9 @@ sendSearch ssdp callback = liftIO $ do
 
   let mx = getMX ssdp
 
-      killAfter n io = do
-        tid <- forkIO $ io `E.finally` S.sClose sock
-        threadDelay n
-        putStrLn $ "Killing " ++ show tid
-        killThread tid
+  S.setSocketOption sock S.RecvTimeOut (mx * 1000)
 
-      loop = do
+  let loop = do
 
         -- receive & parse (TODO) incoming NOTIFY message
         (msg, _, from) <- S.recvFrom sock 4096
@@ -101,11 +97,8 @@ sendSearch ssdp callback = liftIO $ do
 
                loop
 
-
   -- set timeout & start looping
-  killAfter (mx * 1000 * 1000) loop
-
-  putStrLn "MX done"
+  killAfter (mx * 1000 * 1000) loop `E.finally` S.sClose sock
 
   -- wait for all threads to finish before returning all results
   atomically $ do
@@ -113,6 +106,13 @@ sendSearch ssdp callback = liftIO $ do
     when (c > 0) retry
 
   getChanContents results
+
+ where
+  killAfter n io = do
+    tid <- forkIO $ io
+    threadDelay n
+    killThread tid
+
 
 
 --------------------------------------------------------------------------------
