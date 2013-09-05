@@ -69,33 +69,33 @@ sendSearch ssdp callback = liftIO $ do
 
   S.setSocketOption sock S.RecvTimeOut (mx * 1000)
 
-  let loop = do
+  let
+
+      runCallback from notify = do
+
+        -- "remember" thread
+        atomically $ modifyTVar count (+1)
+
+        -- store result
+        result <- callback from notify
+        writeChan results result
+
+        -- remove current thread
+        atomically $ modifyTVar count (`subtract` 1)
+  
+      loop = do
 
         -- receive & parse (TODO) incoming NOTIFY message
         (msg, _, from) <- S.recvFrom sock 4096
 
         case parseSsdpSearchResponse msg of
-             Left err -> do
 
-               print err -- FIXME
-               loop
+             Right notify -> void $ forkIO $
+               runCallback from notify
 
-             Right notify -> do
+             Left err     -> print err -- FIXME
 
-               -- run callback in new thread
-               _ <- forkIO $ do
-
-                 -- "remember" thread
-                 atomically $ modifyTVar count (+1)
-
-                 -- store result
-                 result <- callback from notify
-                 writeChan results result
-
-                 -- remove current thread
-                 atomically $ modifyTVar count (`subtract` 1)
-
-               loop
+        loop
 
   -- set timeout & start looping
   killAfter (mx * 1000 * 1000) loop `E.finally` S.sClose sock
