@@ -22,7 +22,7 @@ ssdpNotify = do
   _    <- htmlNewLine
   hdrs <- headers
   _    <- htmlNewLine
-  return $ SSDPNotify bl hdrs
+  return $ SSDP bl hdrs
 
 htmlNewLine :: Parser String
 htmlNewLine = string "\r\n"

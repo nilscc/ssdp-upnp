@@ -1,4 +1,3 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE EmptyDataDecls #-}
 
 module Network.SSDP.Types where
@@ -7,10 +6,10 @@ data Search
 data Notify
 data Response
 
-data SSDP a where
-  SSDPSearch   :: MX -> String -> [Header] -> SSDP Search
-  SSDPNotify   ::       String -> [Header] -> SSDP Notify
-  SSDPResponse ::       String -> [Header] -> SSDP Response
+data SSDP a = SSDP
+  { ssdpStartingLine :: String
+  , ssdpHeaders      :: [Header]
+  }
 
 data Header
   = String :- String

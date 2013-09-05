@@ -1,6 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Network.SSDP
@@ -33,6 +32,7 @@ import           Network
 import qualified Network.Socket       as S
 import           Network.Multicast
 import           Network.SSDP.Parser
+import           Network.SSDP.Headers
 import           Network.SSDP.Types
 import           Network.SSDP.UUID
 
@@ -113,30 +113,29 @@ sendSearch ssdp callback = liftIO $ do
     threadDelay n
     killThread tid
 
+  chanToList chan = do
+    isempty <- isEmptyTChan chan
+    if isempty
+       then return []
+       else (:) <$> readTChan chan
+                <*> chanToList chan
+
 
 
 --------------------------------------------------------------------------------
 -- SSDP Messages
 
 getMX :: SSDP Search -> MX
-getMX (SSDPSearch mx _ _) = mx
-
-getStartLine :: SSDP a -> String
-getStartLine (SSDPSearch _ rl _) = rl
-getStartLine (SSDPNotify   rl _) = rl
-getStartLine (SSDPResponse rl _) = rl
-
-getHeaders :: SSDP a -> [Header]
-getHeaders (SSDPSearch _ _ h) = h
-getHeaders (SSDPNotify   _ h) = h
-getHeaders (SSDPResponse _ h) = h
+getMX (SSDP _ hdrs) =
+  let Just mx = findHeaderValueByName "MX" hdrs
+   in read mx
 
 ssdpSearch
   :: ST
   -> Maybe MX
   -> Maybe UserAgent
   -> SSDP Search
-ssdpSearch st mmx mua = SSDPSearch mx
+ssdpSearch st mmx mua = SSDP
   "M-SEARCH * HTTP/1.1"
   [ "HOST"      :- "239.255.255.250:1900"
   , "MAN"       :- "\"ssdp:discover\""
@@ -157,7 +156,7 @@ ssdpSearchResponse
   -> Maybe ConfigId
   -> Maybe Searchport
   -> SSDP Response
-ssdpSearchResponse loc srv maxAge st uuid mbid mcid msp = SSDPResponse
+ssdpSearchResponse loc srv maxAge st uuid mbid mcid msp = SSDP
   "HTTP/1.1 200 OK"
   [ "LOCATION"              :- loc
   , "SERVER"                :- srv
@@ -175,8 +174,8 @@ ssdpSearchResponse loc srv maxAge st uuid mbid mcid msp = SSDPResponse
 
 renderSSDP :: SSDP a -> String
 renderSSDP ssdp = intercalate "\r\n" $
-  [ getStartLine ssdp ]
-  ++ mapMaybe renderHeader (getHeaders ssdp)
+  [ ssdpStartingLine ssdp ]
+  ++ mapMaybe renderHeader (ssdpHeaders ssdp)
   ++ [ "\r\n" ]
 
 renderHeader :: Header -> Maybe String
