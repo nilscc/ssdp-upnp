@@ -1,12 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.SSDP
-  ( SSDP
+  ( -- * SSDP related types
+    SSDP
   , ST (..)
   , Header (..)
+  , UserAgent, MX, MaxAge, Location, Server, BootId, ConfigId, Searchport
   , UUID, generateUUID, mkUUID
+    -- * SSDP messages
+  , ssdpSearch, ssdpSearchResponse
+    -- * Rendering
   , renderSSDP
-  , ssdpDiscover
   ) where
 
 import Data.List
@@ -25,12 +29,24 @@ data Header
   | String :? Maybe String
   deriving Show
 
+infixr 0 :-
+infixr 0 :?
+
 type UserAgent = String
 type MX = Int
+
+type MaxAge = Int
+type Location = String
+type Server = String
+
+type BootId = Int
+type ConfigId = Int
+type Searchport = Int
 
 --------------------------------------------------------------------------------
 -- SSDP Messages
 
+-- | SSDP Search targets
 data ST
   = SsdpAll
   | UpnpRootDevice
@@ -42,18 +58,41 @@ data ST
                , serviceType    :: String
                , serviceVersion :: String }
 
-ssdpDiscover
+ssdpSearch
   :: ST
   -> Maybe MX
   -> Maybe UserAgent
   -> SSDP
-ssdpDiscover st mx mua = SSDP
+ssdpSearch st mx mua = SSDP
   "M-SEARCH * HTTP/1.1"
   [ "Host"      :- "239.255.255.250:1900"
   , "Man"       :- "\"ssdp:discover\""
   , "ST"        :- renderST st
   , "MX"        :- maybe "3" show mx
   , "UserAgent" :? mua
+  ]
+
+ssdpSearchResponse
+  :: Location
+  -> Server
+  -> MaxAge
+  -> ST
+  -> UUID
+  -> Maybe BootId
+  -> Maybe ConfigId
+  -> Maybe Searchport
+  -> SSDP
+ssdpSearchResponse loc srv maxAge st uuid mbid mcid msp = SSDP
+  "HTTP/1.1 200 OK"
+  [ "LOCATION"              :- loc
+  , "SERVER"                :- srv
+  , "CACHE-CONTROL"         :- "max-age=" ++ show maxAge
+  , "EXT"                   :- ""
+  , "ST"                    :- renderST st
+  , "USN"                   :- "uuid:" ++ renderUuid uuid ++ "::" ++ renderST st
+  , "BOOTID.UPNP.ORG"       :? fmap show mbid
+  , "CONFIGID.UPNP.ORG"     :? fmap show mcid
+  , "SEARCHPORT.UPNP.ORG"   :? fmap show msp
   ]
 
 --------------------------------------------------------------------------------
