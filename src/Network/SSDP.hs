@@ -19,6 +19,7 @@ module Network.SSDP
   , renderSSDP
   ) where
 
+import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.STM
 import qualified Control.Exception    as E
@@ -62,7 +63,7 @@ sendSearch ssdp callback = liftIO $ do
   (sock, sockaddr) <- multicastSender ssdpAddr ssdpPort
   _ <- S.sendTo sock (renderSSDP ssdp) sockaddr
 
-  results <- newChan
+  results <- newTChanIO
   count   <- newTVarIO (0 :: Int)
 
   let mx = getMX ssdp
@@ -76,12 +77,12 @@ sendSearch ssdp callback = liftIO $ do
         -- "remember" thread
         atomically $ modifyTVar count (+1)
 
-        -- store result
+        -- run callback & store result
         result <- callback from notify
-        writeChan results result
-
-        -- remove current thread
-        atomically $ modifyTVar count (`subtract` 1)
+        atomically $ do
+          writeTChan results result
+          -- remove current thread
+          modifyTVar count (`subtract` 1)
   
       loop = do
 
@@ -104,8 +105,7 @@ sendSearch ssdp callback = liftIO $ do
   atomically $ do
     c <- readTVar count
     when (c > 0) retry
-
-  getChanContents results
+    chanToList results
 
  where
   killAfter n io = do
