@@ -1,10 +1,7 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Network.SSDP.Types where
-
-import Data.String
 
 data Search
 data Notify
@@ -23,45 +20,33 @@ data Header
 class Renderable a where
   render :: a -> String
 
-class HasHeader ssdp header where
-  get :: ssdp -> header
+class HasHeader ssdp header result where
+  get :: header -> ssdp -> result
 
 infixr 0 :-
 infixr 0 :?
 
-newtype Host = Host String
-  deriving (Eq, Show, IsString)
+type MX = Int
+type UserAgent = String
+type MaxAge = Int
+type Location = String
+type Server = String
+type BootId = Int
+type ConfigId = Int
+type Searchport = Int
 
-newtype Location = Location String
-  deriving (Eq, Show, IsString)
-
-newtype Server = Server String
-  deriving (Eq, Show, IsString)
-
--- | @CACHE-CONTROL: max-age=@ header
-newtype MaxAge = MaxAge Int
-  deriving (Eq, Show, Num)
-
-newtype UserAgent = UserAgent String
-  deriving (Eq, Show, IsString)
-
-newtype EXT = EXT String
-  deriving (Eq, Show, IsString)
-
-newtype Man = Man String
-  deriving (Eq, Show, IsString)
-
-newtype MX = MX Int
-  deriving (Eq, Show, Num)
-
-newtype BootId = BootId Int
-  deriving (Eq, Show, Num)
-
-newtype ConfigId = ConfigId Int
-  deriving (Eq, Show, Num)
-
-newtype Searchport = Searchport Int
-  deriving (Eq, Show, Num)
+data STH = STH
+data HostH = HostH
+data LocationH = LocationH
+data ServerH = ServerH
+data MaxAgeH = MaxAgeH
+data UserAgentH = UserAgentH
+data ExtH = EXTH
+data ManH = ManH
+data MXH = MXH
+data BootIdH = BootIdH
+data ConfigIdH = ConfigIdH
+data SearchportH = SearchportH
 
 newtype UUID = UUID (String, String, String, String, String)
   deriving (Show, Eq, Ord)

@@ -64,7 +64,7 @@ sendSearch ssdp callback = liftIO $ do
   results <- newTChanIO
   count   <- newTVarIO (0 :: Int)
 
-  let MX mx = get ssdp
+  let mx = get MXH ssdp
 
   S.setSocketOption sock S.RecvTimeOut (mx * 1000)
 
