@@ -5,12 +5,14 @@ import Network.SSDP
 
 discover :: IO ()
 discover = do
-  _ <- sendSearch ssdp callback
-  return ()
+  results <- sendSearch ssdp callback
+  mapM_ put results
  where
-  ssdp              = ssdpSearch UpnpRootDevice Nothing Nothing
-  callback from msg =
-    putStrLn $ "\nMsg [ " ++ show from ++ " ]:\n\n" ++ renderSSDP msg
+  ssdp = ssdpSearch UpnpRootDevice Nothing Nothing
+  callback from msg = return (from, msg)
+  put (from, msg) =
+    putStrLn $ "\nMsg [ " ++ show from ++ " ]:\n\n"
+               ++ renderSSDP msg
 
 main :: IO ()
 main = withSocketsDo $ do
