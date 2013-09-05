@@ -1,12 +1,13 @@
 module Network.SSDP.UUID where
 
-newtype UUID = UUID String
+import Data.List
+import Network.SSDP.Types
 
-renderUuid :: UUID -> String
-renderUuid (UUID s) = s
+renderUUID :: UUID -> String
+renderUUID (UUID (a,b,c,d,e)) = intercalate "-" [a,b,c,d,e]
 
 generateUUID :: IO UUID
 generateUUID = undefined
 
-mkUUID :: String -> UUID
+mkUUID :: (String, String, String, String, String) -> UUID
 mkUUID = UUID

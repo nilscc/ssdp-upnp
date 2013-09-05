@@ -1,0 +1,29 @@
+Name:                ssdp-upnp
+Version:             0.0.1
+
+Synopsis:            SSDP/UPnP library
+Description:         SSDP/UPnP library
+
+License:             MIT
+License-file:        LICENSE
+Author:              Nils Schweinsberg <mail@nils.cc>
+Maintainer:          mail@nils.cc
+-- Copyright:           
+
+Category:            Network
+
+Build-type:          Simple
+Cabal-version:       >= 1.6
+
+-- Extra-source-files:  
+
+executable ssdp-test
+
+  HS-source-dirs:    src
+  Main-Is:           Test.hs
+
+  GHC-options:       -Wall -O2 -threaded
+
+  Build-depends:       
+    base == 4.*, network, network-multicast, mtl, stm,
+    parsec

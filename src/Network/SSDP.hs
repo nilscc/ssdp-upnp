@@ -1,76 +1,151 @@
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Network.SSDP
   ( -- * SSDP related types
-    SSDP
+    SSDP, Search, Notify
   , ST (..)
   , Header (..)
   , UserAgent, MX, MaxAge, Location, Server, BootId, ConfigId, Searchport
   , UUID, generateUUID, mkUUID
     -- * SSDP messages
   , ssdpSearch, ssdpSearchResponse
+  , getMX
+    -- * Sending & receiving SSDP messages
+  , sendNotify, sendSearch
     -- * Rendering
   , renderSSDP
   ) where
 
-import Data.List
-import Data.Maybe
+import           Control.Concurrent
+import           Control.Concurrent.STM
+import qualified Control.Exception    as E
+import           Control.Monad
+import           Control.Monad.Trans
 
-import Network.SSDP.UUID
+import           Data.List
+import           Data.Maybe
 
-data SSDP = SSDP
-  { ssdpRequestLine :: String
-  , ssdpHeaders :: [Header]
-  }
-  deriving Show
+import           Network
+import qualified Network.Socket       as S
+import           Network.Multicast
+import           Network.SSDP.Parser
+import           Network.SSDP.Types
+import           Network.SSDP.UUID
 
-data Header
-  = String :- String
-  | String :? Maybe String
-  deriving Show
+--------------------------------------------------------------------------------
+-- Sending & receiving SSDP messages
 
-infixr 0 :-
-infixr 0 :?
+ssdpPort :: S.PortNumber
+ssdpPort = 1900
 
-type UserAgent = String
-type MX = Int
+ssdpAddr :: HostName
+ssdpAddr = "239.255.255.250"
 
-type MaxAge = Int
-type Location = String
-type Server = String
+sendNotify :: MonadIO m => SSDP Notify -> m ()
+sendNotify ssdp = do
 
-type BootId = Int
-type ConfigId = Int
-type Searchport = Int
+  -- send ssdp:discover
+  (sock, sockaddr) <- liftIO $ multicastSender ssdpAddr ssdpPort
+  _ <- liftIO $ S.sendTo sock (renderSSDP ssdp) sockaddr
+  return ()
+
+sendSearch
+  :: MonadIO m
+  => SSDP Search
+  -> (S.SockAddr -> SSDP Notify -> IO a) -- ^ callback for replies
+  -> m [a]
+sendSearch ssdp callback = liftIO $ do
+
+  (sock, sockaddr) <- multicastSender ssdpAddr ssdpPort
+  _ <- S.sendTo sock (renderSSDP ssdp) sockaddr
+
+  results <- newChan
+  count   <- newTVarIO (0 :: Int)
+
+  let mx = getMX ssdp
+
+      killAfter n io = do
+        tid <- forkIO $ io `E.finally` S.sClose sock
+        threadDelay n
+        putStrLn $ "Killing " ++ show tid
+        killThread tid
+
+      loop = do
+
+        -- receive & parse (TODO) incoming NOTIFY message
+        (msg, _, from) <- S.recvFrom sock 4096
+
+        case parseSsdpSearchResponse msg of
+             Left err -> do
+
+               print err -- FIXME
+               loop
+
+             Right notify -> do
+
+               -- run callback in new thread
+               _ <- forkIO $ do
+
+                 -- "remember" thread
+                 atomically $ modifyTVar count (+1)
+
+                 -- store result
+                 result <- callback from notify
+                 writeChan results result
+
+                 -- remove current thread
+                 atomically $ modifyTVar count (`subtract` 1)
+
+               loop
+
+
+  -- set timeout & start looping
+  killAfter (mx * 1000 * 1000) loop
+
+  putStrLn "MX done"
+
+  -- wait for all threads to finish before returning all results
+  atomically $ do
+    c <- readTVar count
+    when (c > 0) retry
+
+  getChanContents results
+
 
 --------------------------------------------------------------------------------
 -- SSDP Messages
 
--- | SSDP Search targets
-data ST
-  = SsdpAll
-  | UpnpRootDevice
-  | UuidDevice UUID
-  | UrnDevice  { deviceDomain  :: String
-               , deviceType    :: String
-               , deviceVersion :: String }
-  | UrnService { serviceDomain  :: String
-               , serviceType    :: String
-               , serviceVersion :: String }
+getMX :: SSDP Search -> MX
+getMX (SSDPSearch mx _ _) = mx
+
+getStartLine :: SSDP a -> String
+getStartLine (SSDPSearch _ rl _) = rl
+getStartLine (SSDPNotify   rl _) = rl
+getStartLine (SSDPResponse rl _) = rl
+
+getHeaders :: SSDP a -> [Header]
+getHeaders (SSDPSearch _ _ h) = h
+getHeaders (SSDPNotify   _ h) = h
+getHeaders (SSDPResponse _ h) = h
 
 ssdpSearch
   :: ST
   -> Maybe MX
   -> Maybe UserAgent
-  -> SSDP
-ssdpSearch st mx mua = SSDP
+  -> SSDP Search
+ssdpSearch st mmx mua = SSDPSearch mx
   "M-SEARCH * HTTP/1.1"
-  [ "Host"      :- "239.255.255.250:1900"
-  , "Man"       :- "\"ssdp:discover\""
+  [ "HOST"      :- "239.255.255.250:1900"
+  , "MAN"       :- "\"ssdp:discover\""
   , "ST"        :- renderST st
-  , "MX"        :- maybe "3" show mx
-  , "UserAgent" :? mua
+  , "MX"        :- show mx
+  , "USERAGENU" :? mua
   ]
+ where
+  mx = fromMaybe 3 mmx
 
 ssdpSearchResponse
   :: Location
@@ -81,15 +156,15 @@ ssdpSearchResponse
   -> Maybe BootId
   -> Maybe ConfigId
   -> Maybe Searchport
-  -> SSDP
-ssdpSearchResponse loc srv maxAge st uuid mbid mcid msp = SSDP
+  -> SSDP Response
+ssdpSearchResponse loc srv maxAge st uuid mbid mcid msp = SSDPResponse
   "HTTP/1.1 200 OK"
   [ "LOCATION"              :- loc
   , "SERVER"                :- srv
   , "CACHE-CONTROL"         :- "max-age=" ++ show maxAge
   , "EXT"                   :- ""
   , "ST"                    :- renderST st
-  , "USN"                   :- "uuid:" ++ renderUuid uuid ++ "::" ++ renderST st
+  , "USN"                   :- "uuid:" ++ renderUUID uuid ++ "::" ++ renderST st
   , "BOOTID.UPNP.ORG"       :? fmap show mbid
   , "CONFIGID.UPNP.ORG"     :? fmap show mcid
   , "SEARCHPORT.UPNP.ORG"   :? fmap show msp
@@ -98,10 +173,10 @@ ssdpSearchResponse loc srv maxAge st uuid mbid mcid msp = SSDP
 --------------------------------------------------------------------------------
 -- Rendering
 
-renderSSDP :: SSDP -> String
+renderSSDP :: SSDP a -> String
 renderSSDP ssdp = intercalate "\r\n" $
-  [ ssdpRequestLine ssdp ]
-  ++ mapMaybe renderHeader (ssdpHeaders ssdp)
+  [ getStartLine ssdp ]
+  ++ mapMaybe renderHeader (getHeaders ssdp)
   ++ [ "\r\n" ]
 
 renderHeader :: Header -> Maybe String
@@ -113,7 +188,7 @@ renderST :: ST -> String
 renderST st = case st of
   SsdpAll -> "ssdp:all"
   UpnpRootDevice -> "upnp:rootdevice"
-  UuidDevice uuid -> "uuid:" ++ renderUuid uuid
+  UuidDevice uuid -> "uuid:" ++ renderUUID uuid
   UrnDevice dom ty ver ->
     "urn:" ++ dom ++ ":device:" ++ ty ++ ":" ++ ver
   UrnService dom ty ver ->
