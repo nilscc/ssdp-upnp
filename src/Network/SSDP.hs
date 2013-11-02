@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Network.SSDP
   ( -- * SSDP related types
@@ -11,6 +12,8 @@ module Network.SSDP
   , UUID, generateUUID, mkUUID
     -- * SSDP messages
   , ssdpSearch, ssdpSearchResponse
+    -- ** SSDP headers
+  , getHeaderValue, hasHeader
     -- * Sending & receiving SSDP messages
   , sendNotify, sendSearch
   , Renderable (..)
@@ -23,7 +26,9 @@ import qualified Control.Exception    as E
 import           Control.Monad
 import           Control.Monad.Trans
 
+import           Data.Char
 import           Data.Maybe
+import           Data.List
 
 import           Network
 import qualified Network.Socket       as S
@@ -54,9 +59,8 @@ sendNotify ssdp = liftIO $ do
 sendSearch
   :: MonadIO m
   => SSDP Search
-  -> (S.SockAddr -> SSDP Notify -> IO a) -- ^ callback for replies
-  -> m [a]
-sendSearch ssdp callback = liftIO $ do
+  -> m [(S.SockAddr, SSDP Notify)]
+sendSearch ssdp = liftIO $ do
 
   (sock, sockaddr) <- multicastSender ssdpAddr ssdpPort
   _ <- S.sendTo sock (render ssdp) sockaddr
@@ -68,36 +72,22 @@ sendSearch ssdp callback = liftIO $ do
 
   S.setSocketOption sock S.RecvTimeOut (mx * 1000)
 
-  let
-
-      runCallback from notify = do
-
-        -- "remember" thread
-        atomically $ modifyTVar count (+1)
-
-        -- run callback & store result
-        result <- callback from notify
-        atomically $ do
-          writeTChan results result
-          -- remove current thread
-          modifyTVar count (`subtract` 1)
-  
-      loop = do
+  let loop = forever $ do
 
         -- receive & parse (TODO) incoming NOTIFY message
         (msg, _, from) <- S.recvFrom sock 4096
 
         case parseSsdpSearchResponse msg of
 
-             Right notify -> void $ forkIO $
-               runCallback from notify
+             Right notify -> do
+               -- store result
+               atomically $
+                 writeTChan results (from, notify)
 
              Left err     -> do -- FIXME
                putStrLn $ show err ++ ":\n"
                mapM_ print $ lines msg
                putStrLn "\n"
-
-        loop
 
   -- set timeout & start looping
   killAfter (mx * 1000 * 1000) loop `E.finally` S.sClose sock
@@ -122,6 +112,27 @@ sendSearch ssdp callback = liftIO $ do
                 <*> chanToList chan
 
 
+--------------------------------------------------------------------------------
+-- SSDP headers
+
+getHeaderValue :: String -> SSDP a -> Maybe String
+getHeaderValue (map toUpper -> hdr) (SSDP _ hdrs) =
+  join $ hdrVal <$> find ((hdr ==) . hdrName) hdrs
+ where
+
+hdrName :: Header -> String
+hdrName (h :- _) = map toUpper h
+hdrName (h :? _) = map toUpper h
+
+hdrVal :: Header -> Maybe String
+hdrVal (_ :- v) = Just v
+hdrVal (_ :? v) = v
+
+hasHeader :: String -> SSDP a -> Bool
+hasHeader (map toUpper -> hdr) (SSDP _ hdrs) = go hdrs
+ where
+  go [] = False
+  go (x:xs) = if hdr == hdrName x then True else go xs
 
 --------------------------------------------------------------------------------
 -- SSDP Messages
