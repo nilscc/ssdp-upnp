@@ -6,7 +6,7 @@ module Network.SSDP.Parser
 
 import Control.Applicative
 import Control.Monad
-import Text.ParserCombinators.Parsec hiding (many)
+import Text.ParserCombinators.Parsec hiding (many, optional)
 
 import Network.SSDP.UUID
 import Network.SSDP.Types
@@ -38,7 +38,7 @@ ssdpNotify = do
   bl   <- choice [notify, httpok]
   _    <- htmlNewLine
   hdrs <- headers
-  _    <- htmlNewLine
+  _    <- optional htmlNewLine
   return $ SSDP bl hdrs
 
 htmlNewLine :: Parser String
