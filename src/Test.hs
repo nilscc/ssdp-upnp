@@ -6,7 +6,6 @@ import Control.Monad
 import Network
 import Network.SSDP
 import Network.UPnP
-import Network.UPnP.Types
 
 showDeviceInfo :: Upnp Device -> IO ()
 showDeviceInfo dev = do

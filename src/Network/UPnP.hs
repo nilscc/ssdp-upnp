@@ -1,6 +1,24 @@
 {-# LANGUAGE ViewPatterns #-}
 
-module Network.UPnP where
+module Network.UPnP
+  ( -- * Device description
+    requestDeviceDescription
+  , Upnp
+    -- ** Devices
+  , Device
+  , getDeviceType, DeviceType (..)
+  , getFriendlyName, getManufacturer, getModelName, getUDN
+  , getDeviceList
+    -- ** Services
+  , Service
+  , getServiceList
+  , getServiceType, ServiceType (..)
+  , getServiceId, ServiceId (..)
+  , getSCPDURL, getControlURL, getEventSubURL
+  , findService
+    -- ** Other
+  , getStringValue, getRequiredStringValue
+  ) where
 
 import Control.Applicative
 import Control.Monad.Trans
