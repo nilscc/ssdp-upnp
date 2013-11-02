@@ -1,11 +1,31 @@
 module Main where
 
-import Text.XML.Light
+import Control.Applicative
+import Control.Monad
 
 import Network
 import Network.SSDP
 import Network.UPnP
 import Network.UPnP.Types
+
+showDeviceInfo :: Upnp Device -> IO ()
+showDeviceInfo dev = do
+
+  putStrLn "\nDevice info:\n"
+  putStrLn $ "\tDevice type:   " ++ show (getDeviceType dev)
+  putStrLn $ "\tFriendly name: " ++ getFriendlyName dev
+
+  putStrLn "\n\tServices:\n"
+  forM_ (getServiceList dev) $ \service -> do
+    putStrLn $ "\t\tService type: " ++ show (getServiceType service)
+    putStrLn $ "\t\tService ID:   " ++ show (getServiceId service)
+    putStrLn $ "\t\tSCPDURL:      " ++ getSCPDURL service
+    putStrLn $ "\t\tControl URL:  " ++ getControlURL service
+    putStrLn $ "\t\tEventSubURL:  " ++ getEventSubURL service
+    putStrLn ""
+
+  forM_ (getDeviceList dev) showDeviceInfo
+
 
 discover :: IO ()
 discover = do
@@ -19,27 +39,38 @@ discover = do
     putStrLn $ "Location: " ++ show (getHeaderValue "LOCATION" msg)
     putStrLn $ "\n" ++ render msg
 
-getDescOfFirst :: IO ()
-getDescOfFirst = do
+getDescOfFirstIGD :: IO ()
+getDescOfFirstIGD = do
 
   -- SSDP search
   res <- sendSearch ssdp
+  print $ length res
   let ((from, notify):_) = filter (hasHeader "LOCATION" . snd) res
 
   putStrLn $ "\nMsg [ " ++ show from ++ " ]:\n"
-  putStrLn $ "Server:   " ++ show (getHeaderValue "SERVER" notify)
-  putStrLn $ "Location: " ++ show (getHeaderValue "LOCATION" notify)
-  putStrLn $ "\n" ++ render notify
+  putStrLn $ render notify
 
   -- get description
-  Just (UpnpXml cont) <- requestDeviceDescription notify
+  Just dev <- requestDeviceDescription notify
+  showDeviceInfo dev
 
-  putStrLn "\nDevice description:\n"
-  mapM_ (putStrLn . ppContent) cont
  where
-  ssdp = ssdpSearch UpnpRootDevice Nothing Nothing
+  ssdp = ssdpSearch (UrnDevice "schemas-upnp-org" "InternetGatewayDevice" "1") Nothing Nothing
 
+findWANIPConnection1s :: IO ()
+findWANIPConnection1s = do
+  let ssdp = ssdpSearch UpnpRootDevice Nothing Nothing
+  results <- sendSearch ssdp
+
+  forM_ results $ \(_from, notify) -> do
+    dev <- requestDeviceDescription notify
+    let wanip1 = StandardService "WANIPConnection" "1"
+    case join $ findService wanip1 <$> dev of
+      Nothing -> return ()
+      Just _  -> maybe (error "") showDeviceInfo dev
+  
 main :: IO ()
 main = withSocketsDo $ do
   --discover
-  getDescOfFirst
+  --getDescOfFirstIGD
+  findWANIPConnection1s
