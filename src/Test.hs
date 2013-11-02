@@ -1,3 +1,5 @@
+{-# LANGUAGE ViewPatterns #-}
+
 module Main where
 
 import Control.Applicative
@@ -58,13 +60,15 @@ findWANIPConnection1s = do
   let ssdp = ssdpSearch UpnpRootDevice Nothing Nothing
   results <- sendSearch ssdp
 
-  forM_ results $ \(_from, notify) -> do
+  forM_ results $ \(from, notify) -> do
 
     dev <- requestDeviceDescription notify
     let wanip1 = StandardService "WANIPConnection" "1"
     case join $ findService wanip1 <$> dev of
-      Nothing -> return ()
-      Just _  -> maybe (error "") showDeviceInfo dev
+      Just (getParentDevice -> Just dev') -> do
+        putStrLn $ "Host [ " ++ show from ++ " ]"
+        showDeviceInfo dev'
+      _ -> return ()
   
 main :: IO ()
 main = withSocketsDo $ do

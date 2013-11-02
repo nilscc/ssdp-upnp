@@ -4,7 +4,10 @@ module Network.UPnP.Types where
 
 import Text.XML.Light
 
-newtype Upnp a = UpnpXml { getUpnpXmlContent :: Element }
+data Upnp a
+  = UpnpXml { getParentDevice   :: Maybe (Upnp Device)
+            , getUpnpXmlContent :: Element
+            }
   deriving (Show)
 
 data Device

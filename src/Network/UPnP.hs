@@ -3,7 +3,7 @@
 module Network.UPnP
   ( -- * Device description
     requestDeviceDescription
-  , Upnp
+  , Upnp, getParentDevice
     -- ** Devices
   , Device
   , getDeviceType, DeviceType (..)
@@ -55,7 +55,7 @@ requestDeviceDescription ssdp = runMaybeT $ do
       els  = onlyElems xml
       devs = pickChildren (hasElName "device") $ els
   case devs of
-    [dev] -> return $ UpnpXml dev
+    [dev] -> return $ UpnpXml Nothing dev
     _     -> do
       liftIO (print devs)
       fail "Unexpected number of <device> tags."
@@ -68,7 +68,7 @@ requestDeviceDescription ssdp = runMaybeT $ do
 
 -- | Find a optional string valued device property
 getStringValue :: String -> Upnp a -> Maybe String
-getStringValue s (UpnpXml dev) =
+getStringValue s (UpnpXml _ dev) =
   case pickChildren (hasElName s) [dev] of
     [elContent -> [Text (cdData -> str)]] -> Just str
     _ -> Nothing
@@ -96,7 +96,7 @@ getModelName    = getRequiredStringValue "modelName"
 getUDN          = getRequiredStringValue "UDN"
 
 getDeviceList :: Upnp Device -> [Upnp Device]
-getDeviceList (UpnpXml dev) = map UpnpXml $
+getDeviceList upnp@(UpnpXml _ dev) = map (UpnpXml (Just upnp)) $
      pickChildren (hasElName "deviceList")
   ~> pickChildren (hasElName "device")
    $ [dev]
@@ -105,7 +105,7 @@ getDeviceList (UpnpXml dev) = map UpnpXml $
 -- Services
 
 getServiceList :: Upnp Device -> [Upnp Service]
-getServiceList (UpnpXml dev) = map UpnpXml $
+getServiceList upnp@(UpnpXml _ dev) = map (UpnpXml (Just upnp)) $
      pickChildren (hasElName "serviceList")
   ~> pickChildren (hasElName "service")
    $ [dev]
