@@ -25,5 +25,5 @@ executable ssdp-test
   GHC-options:       -Wall -O2 -threaded
 
   Build-depends:       
-    base == 4.*, network, network-multicast, mtl, stm,
-    parsec
+    base == 4.*, network, network-multicast, mtl, stm, transformers,
+    parsec, xml, HTTP
