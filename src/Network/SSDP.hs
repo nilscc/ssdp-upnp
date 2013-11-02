@@ -92,7 +92,10 @@ sendSearch ssdp callback = liftIO $ do
              Right notify -> void $ forkIO $
                runCallback from notify
 
-             Left err     -> print err -- FIXME
+             Left err     -> do -- FIXME
+               putStrLn $ show err ++ ":\n"
+               mapM_ print $ lines msg
+               putStrLn "\n"
 
         loop
 
