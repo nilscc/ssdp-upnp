@@ -21,12 +21,25 @@ showDeviceInfo dev = do
   forM_ (getServiceList dev) $ \service -> do
     putStrLn $ "\t\tService type: " ++ show (getServiceType service)
     putStrLn $ "\t\tService ID:   " ++ show (getServiceId service)
-    putStrLn $ "\t\tSCPDURL:      " ++ getSCPDURL service
-    putStrLn $ "\t\tControl URL:  " ++ getControlURL service
-    putStrLn $ "\t\tEventSubURL:  " ++ getEventSubURL service
+    putStrLn $ "\t\tSCPDURL:      " ++ show (getSCPDURL service)
+    putStrLn $ "\t\tControl URL:  " ++ show (getControlURL service)
+    putStrLn $ "\t\tEventSubURL:  " ++ show (getEventSubURL service)
     putStrLn ""
 
   forM_ (getDeviceList dev) showDeviceInfo
+
+showActionInfo :: Upnp Actions -> IO ()
+showActionInfo actions = do
+
+  putStrLn "\nActions:\n"
+
+  mapM_ (putStrLn . ("\tName: " ++)) $ getActionNames actions
+
+  putStrLn "\nGetConnectionTypeInfo:"
+
+  let Just action = getActionByName "GetConnectionTypeInfo" actions
+  forM_ (getArguments action) $ \adesc ->
+    putStrLn $ "\t" ++ show adesc
 
 
 discover :: IO ()
@@ -70,10 +83,24 @@ findWANIPConnection1s = do
     let wanip1 = standardService "WANIPConnection" "1"
     case dev of
       Right (findService wanip1 ->
-             Just (getParentDevice -> Just dev')) -> do
+             Just (getUpnpParent -> Just dev')) -> do
         putStrLn $ "Host [ " ++ show from ++ " ]"
         showDeviceInfo dev'
       _ -> return ()
+
+getWANIPConnectionActions :: IO ()
+getWANIPConnectionActions = do
+  let ssdp = ssdpSearch (UrnService "schemas-upnp-org" "WANIPConnection" "1")
+                        Nothing Nothing
+  (((from, notify):_),_) <- sendSearch ssdp
+
+  putStrLn $ "\nMsg [ " ++ show from ++ " ]:\n"
+  putStrLn $ render notify
+
+  Right dev <- requestDeviceDescription notify
+  let Just service = findService (standardService "WANIPConnection" "1") dev
+  Right actions <- requestActions service
+  showActionInfo actions
   
 main :: IO ()
 main = withSocketsDo $ do
