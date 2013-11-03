@@ -3,7 +3,7 @@
 module Network.UPnP
   ( -- * Device description
     requestDeviceDescription
-  , Upnp, getParentDevice
+  , Upnp, getParentDevice, getUpnpURI
     -- ** Devices
   , Device
   , getDeviceType, DeviceType (..)
@@ -26,6 +26,7 @@ import Control.Monad.Trans.Maybe
 import Data.Maybe
 import Data.Monoid
 import Text.XML.Light
+import Network.URI
 import Network.HTTP
 
 import Network.SSDP
@@ -49,16 +50,17 @@ infixr 9 ~>
 requestDeviceDescription :: SSDP Notify -> IO (Maybe (Upnp Device))
 requestDeviceDescription ssdp = runMaybeT $ do
   loc <- require $ getHeaderValue "LOCATION" ssdp
+  uri <- case parseURI loc of
+           Just uri -> return uri { uriPath = "/" }
+           Nothing  -> fail "Invalid location."
   res <- liftIO $ simpleHTTP (getRequest loc)
   bdy <- rspBody <$> requireRight res
   let xml  = parseXML bdy
       els  = onlyElems xml
       devs = pickChildren (hasElName "device") $ els
   case devs of
-    [dev] -> return $ UpnpXml Nothing dev
-    _     -> do
-      liftIO (print devs)
-      fail "Unexpected number of <device> tags."
+    [dev] -> return $ UpnpXml Nothing uri dev
+    _     -> fail "Unexpected number of <device> tags."
  where
   require = maybe (fail "Unexpected Nothing") return 
   requireRight = either (\_ -> fail "Unexpected Left") return
@@ -68,7 +70,7 @@ requestDeviceDescription ssdp = runMaybeT $ do
 
 -- | Find a optional string valued device property
 getStringValue :: String -> Upnp a -> Maybe String
-getStringValue s (UpnpXml _ dev) =
+getStringValue s (UpnpXml _ _ dev) =
   case pickChildren (hasElName s) [dev] of
     [elContent -> [Text (cdData -> str)]] -> Just str
     _ -> Nothing
@@ -96,7 +98,7 @@ getModelName    = getRequiredStringValue "modelName"
 getUDN          = getRequiredStringValue "UDN"
 
 getDeviceList :: Upnp Device -> [Upnp Device]
-getDeviceList upnp@(UpnpXml _ dev) = map (UpnpXml (Just upnp)) $
+getDeviceList upnp@(UpnpXml _ uri dev) = map (UpnpXml (Just upnp) uri) $
      pickChildren (hasElName "deviceList")
   ~> pickChildren (hasElName "device")
    $ [dev]
@@ -105,7 +107,7 @@ getDeviceList upnp@(UpnpXml _ dev) = map (UpnpXml (Just upnp)) $
 -- Services
 
 getServiceList :: Upnp Device -> [Upnp Service]
-getServiceList upnp@(UpnpXml _ dev) = map (UpnpXml (Just upnp)) $
+getServiceList upnp@(UpnpXml _ uri dev) = map (UpnpXml (Just upnp) uri) $
      pickChildren (hasElName "serviceList")
   ~> pickChildren (hasElName "service")
    $ [dev]

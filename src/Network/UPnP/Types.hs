@@ -2,10 +2,12 @@
 
 module Network.UPnP.Types where
 
+import Network.URI
 import Text.XML.Light
 
 data Upnp a
   = UpnpXml { getParentDevice   :: Maybe (Upnp Device)
+            , getUpnpURI        :: URI
             , getUpnpXmlContent :: Element
             }
   deriving (Show)

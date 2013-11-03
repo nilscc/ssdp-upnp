@@ -13,6 +13,8 @@ showDeviceInfo :: Upnp Device -> IO ()
 showDeviceInfo dev = do
 
   putStrLn "\nDevice info:\n"
+
+  putStrLn $ "\tLocation:      " ++ show (getUpnpURI dev)
   putStrLn $ "\tDevice type:   " ++ show (getDeviceType dev)
   putStrLn $ "\tFriendly name: " ++ getFriendlyName dev
 
