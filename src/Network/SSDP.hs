@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE CPP #-}
 
 module Network.SSDP
   ( -- * SSDP related types
@@ -74,7 +75,9 @@ sendSearch ssdp = liftIO $ do
 
   let mx = get MXH ssdp
 
+#ifdef mingw32_HOST_OS
   S.setSocketOption sock S.RecvTimeOut (mx * 1000)
+#endif
 
   let loop = forever $ do
 
