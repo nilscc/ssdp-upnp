@@ -75,7 +75,7 @@ sendSearch ssdp = liftIO $ do
 
   let mx = get MXH ssdp
 
-#ifdef mingw32_HOST_OS
+#ifdef mingw32_BUILD_OS
   S.setSocketOption sock S.RecvTimeOut (mx * 1000)
 #endif
 
