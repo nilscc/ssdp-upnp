@@ -2,7 +2,6 @@
 
 module Main where
 
-import Control.Applicative
 import Control.Monad
 
 import Network
@@ -55,8 +54,10 @@ getDescOfFirstIGD = do
   putStrLn $ render notify
 
   -- get description
-  Just dev <- requestDeviceDescription notify
-  showDeviceInfo dev
+  mdev <- requestDeviceDescription notify
+  case mdev of
+    Right dev -> showDeviceInfo dev
+    Left err  -> putStrLn $ "Error: " ++ err
 
 findWANIPConnection1s :: IO ()
 findWANIPConnection1s = do
@@ -67,8 +68,9 @@ findWANIPConnection1s = do
 
     dev <- requestDeviceDescription notify
     let wanip1 = standardService "WANIPConnection" "1"
-    case join $ findService wanip1 <$> dev of
-      Just (getParentDevice -> Just dev') -> do
+    case dev of
+      Right (findService wanip1 ->
+             Just (getParentDevice -> Just dev')) -> do
         putStrLn $ "Host [ " ++ show from ++ " ]"
         showDeviceInfo dev'
       _ -> return ()

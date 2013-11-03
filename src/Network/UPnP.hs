@@ -22,7 +22,7 @@ module Network.UPnP
 
 import Control.Applicative
 import Control.Monad.Trans
-import Control.Monad.Trans.Maybe
+import Control.Monad.Error
 import Data.Maybe
 import Data.Monoid
 import Text.XML.Light
@@ -47,8 +47,8 @@ infixr 9 ~>
 --------------------------------------------------------------------------------
 -- Device description
 
-requestDeviceDescription :: SSDP Notify -> IO (Maybe (Upnp Device))
-requestDeviceDescription ssdp = runMaybeT $ do
+requestDeviceDescription :: SSDP Notify -> IO (Either String (Upnp Device))
+requestDeviceDescription ssdp = runErrorT $ do
   loc <- require $ getHeaderValue "LOCATION" ssdp
   uri <- case parseURI loc of
            Just uri -> return uri { uriPath = "/" }
