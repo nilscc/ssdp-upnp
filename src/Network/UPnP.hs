@@ -76,6 +76,9 @@ hasValue :: String -> Element -> Bool
 hasValue v (elContent -> [Text (cdData -> v')]) = v == v'
 hasValue _ _ = False
 
+hasEl :: (Element -> Bool) -> Element -> Bool
+hasEl test el = or . map test $ elChildren el
+
 infixr 9 ~>
 (~>) :: (a -> b) -> (b -> c) -> a -> c
 (~>) = flip (.)
@@ -241,8 +244,10 @@ getStateVariableByName name (UpnpXml _ _ xml) =
    $ xml
  where
   toStateVar svar =
+
     let -- name value
         nval = pickTag "name" ~> pickStringValues ~> concat $ [svar]
+
         -- data type
         daty = case pickTag "dataType" ~> pickStringValues ~> concat $ [svar] of
                  "ui1"        -> Upnp_ui1
@@ -278,15 +283,52 @@ getStateVariableByName name (UpnpXml _ _ xml) =
         -- "multicast" (default "no") attribute value:
         multicast  =       or [ qName k == "multicast"  && v == "yes"
                                 | Attr k v <- elAttribs svar ]
-                        
+
+        -- default value
+        defval
+          | hasEl (hasElName "defaultValue") svar = Just $
+            pickTag "defaultValue" ~> pickStringValues ~> concat $ [svar]
+          | otherwise = Nothing
+
+        -- allowed values
+        allowed
+          | hasEl (hasElName "allowedValueList") svar = Just $
+               pickTag "allowedValueList"
+            ~> pickTag "allowedValue"
+            ~> pickStringValues
+             $ [svar]
+          | otherwise = Nothing
+
+        -- range values
+        range
+          | hasEl (hasElName "allowedValueRange") svar = Just $
+               pickTag "allowedValueRange"
+            ~> buildRange
+             $ [svar]
+          | otherwise = Nothing
+         where
+          buildRange els = ValueRange 
+                             { rangeMin  = pickTag "minimum"
+                                        ~> pickStringValues ~> concat
+                                         $ els
+                             , rangeMax  = pickTag "maximum"
+                                        ~> pickStringValues ~> concat
+                                         $ els
+                             , rangeStep = if or [ hasEl (hasElName "step") el | el <- els ]
+                                             then Just $ pickTag "step"
+                                                      ~> pickStringValues ~> concat
+                                                       $ els
+                                             else Nothing
+                             }
+
      in StateVariable
           { svarName          = nval
           , svarSendEvents    = sendEvents
           , svarMulticast     = multicast
           , svarType          = daty
-          , svarDefault       = Nothing -- TODO
-          , svarAllowedValues = Nothing -- TODO
-          , svarAllowedRange  = Nothing -- TODO
+          , svarDefault       = defval
+          , svarAllowedValues = allowed
+          , svarAllowedRange  = range
           }
 
 getArguments :: Upnp Action -> [ArgumentDesc]
