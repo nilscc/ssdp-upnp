@@ -17,6 +17,7 @@ module Network.SSDP
     -- * Sending & receiving SSDP messages
   , sendNotify, sendSearch
   , Renderable (..)
+  , ParseError
   ) where
 
 import           Control.Applicative
@@ -29,6 +30,7 @@ import           Control.Monad.Trans
 import           Data.Char
 import           Data.Maybe
 import           Data.List
+import           Text.ParserCombinators.Parsec (ParseError)
 
 import           Network
 import qualified Network.Socket       as S
@@ -59,14 +61,16 @@ sendNotify ssdp = liftIO $ do
 sendSearch
   :: MonadIO m
   => SSDP Search
-  -> m [(S.SockAddr, SSDP Notify)]
+  -> m ( [(S.SockAddr, SSDP Notify)]
+       , [(S.SockAddr, ParseError)]
+       )
 sendSearch ssdp = liftIO $ do
+
+  results <- newTChanIO
+  errors  <- newTChanIO
 
   (sock, sockaddr) <- multicastSender ssdpAddr ssdpPort
   _ <- S.sendTo sock (render ssdp) sockaddr
-
-  results <- newTChanIO
-  count   <- newTVarIO (0 :: Int)
 
   let mx = get MXH ssdp
 
@@ -76,28 +80,20 @@ sendSearch ssdp = liftIO $ do
 
         -- receive & parse (TODO) incoming NOTIFY message
         (msg, _, from) <- S.recvFrom sock 4096
+        putStrLn $ "Message from " ++ show from
 
-        case parseSsdpSearchResponse msg of
-
-             Right notify -> do
-               -- store result
-               atomically $
-                 writeTChan results (from, notify)
-
-             Left err     -> do -- FIXME
-               putStrLn $ show err ++ ":\n"
-               mapM_ print $ lines msg
-               putStrLn "\n"
+        atomically $
+          case parseSsdpSearchResponse msg of
+            -- store result
+            Right notify -> writeTChan results (from, notify)
+            Left  err    -> writeTChan errors  (from, err)
 
   -- set timeout & start looping
   killAfter (mx * 1000 * 1000) loop `E.finally` S.sClose sock
 
   -- wait for all threads to finish before returning all results
-  atomically $ do
-    c <- readTVar count
-    when (c > 0) retry
-    chanToList results
-
+  atomically $ (,) <$> chanToList results
+                   <*> chanToList errors
  where
   killAfter n io = do
     tid <- forkIO $ io

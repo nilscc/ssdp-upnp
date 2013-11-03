@@ -32,7 +32,7 @@ discover :: IO ()
 discover = do
   let ssdp = ssdpSearch (UrnDevice "schemas-upnp-org" "InternetGatewayDevice" "1")
                         Nothing Nothing
-  results <- sendSearch ssdp
+  (results,_) <- sendSearch ssdp
   forM_ results $ \(from, msg) -> do
 
     putStrLn $ "\nMsg [ " ++ show from ++ " ]:\n"
@@ -46,7 +46,7 @@ getDescOfFirstIGD = do
   -- SSDP search
   let ssdp = ssdpSearch (UrnDevice "schemas-upnp-org" "InternetGatewayDevice" "1")
                         Nothing Nothing
-  res <- sendSearch ssdp
+  (res,_) <- sendSearch ssdp
   let ((from, notify):_) = filter (hasHeader "LOCATION" . snd) res
 
   putStrLn $ "\nMsg [ " ++ show from ++ " ]:\n"
@@ -59,7 +59,7 @@ getDescOfFirstIGD = do
 findWANIPConnection1s :: IO ()
 findWANIPConnection1s = do
   let ssdp = ssdpSearch UpnpRootDevice Nothing Nothing
-  results <- sendSearch ssdp
+  (results,_) <- sendSearch ssdp
 
   forM_ results $ \(from, notify) -> do
 
@@ -73,6 +73,6 @@ findWANIPConnection1s = do
   
 main :: IO ()
 main = withSocketsDo $ do
-  discover
+  --discover
   --getDescOfFirstIGD
-  --findWANIPConnection1s
+  findWANIPConnection1s
