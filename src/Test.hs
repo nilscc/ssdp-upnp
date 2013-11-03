@@ -66,7 +66,7 @@ findWANIPConnection1s = do
   forM_ results $ \(from, notify) -> do
 
     dev <- requestDeviceDescription notify
-    let wanip1 = StandardService "WANIPConnection" "1"
+    let wanip1 = standardService "WANIPConnection" "1"
     case join $ findService wanip1 <$> dev of
       Just (getParentDevice -> Just dev') -> do
         putStrLn $ "Host [ " ++ show from ++ " ]"

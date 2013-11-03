@@ -12,7 +12,7 @@ module Network.UPnP
     -- ** Services
   , Service
   , getServiceList
-  , getServiceType, ServiceType (..)
+  , getServiceType, ServiceType (..), standardService
   , getServiceId, ServiceId (..)
   , getSCPDURL, getControlURL, getEventSubURL
   , findService
@@ -105,6 +105,10 @@ getDeviceList upnp@(UpnpXml _ uri dev) = map (UpnpXml (Just upnp) uri) $
 
 --------------------------------------------------------------------------------
 -- Services
+
+-- | Standard device type with \"schemas-upnp-org\" as vendor
+standardService :: String -> String -> ServiceType
+standardService = ServiceType "schemas-upnp-org"
 
 getServiceList :: Upnp Device -> [Upnp Service]
 getServiceList upnp@(UpnpXml _ uri dev) = map (UpnpXml (Just upnp) uri) $

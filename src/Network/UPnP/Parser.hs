@@ -1,6 +1,7 @@
 module Network.UPnP.Parser where
 
 import Control.Applicative
+import Control.Monad
 import Text.ParserCombinators.Parsec hiding (many, optional)
 
 import Network.UPnP.Types
@@ -9,55 +10,39 @@ import Network.UPnP.Types
 -- Device
 
 parseDeviceType :: String -> Either ParseError DeviceType
-parseDeviceType = parse deviceType "DeviceType"
+parseDeviceType = parse pDeviceType "DeviceType"
 
-deviceType :: Parser DeviceType
-deviceType = do
-  _      <- string "urn:"
-
+pDeviceType :: Parser DeviceType
+pDeviceType = do
+  void $ string "urn:"
   -- either take standard constructor or get UPnP vendor for non-standard:
-  constr <- choice [ StandardDevice
-                      <$ try (string "schemas-upnp-org:device:")
-                   , NonStandardDevice
-                      <$> manyTill anyChar (string ":device:")
-                   ]
-
-  -- apply type + version to constructor
-  constr <$> manyTill anyChar colon
-         <*> many anyChar
+  DeviceType <$> manyTill anyChar (string ":device:") -- vendor
+             <*> manyTill anyChar colon               -- dev ty
+             <*> many anyChar                         -- version
 
 --------------------------------------------------------------------------------
 -- Service
 
 parseServiceType :: String -> Either ParseError ServiceType
-parseServiceType = parse serviceType "ServiceType"
+parseServiceType = parse pServiceType "ServiceType"
 
-serviceType :: Parser ServiceType
-serviceType = do
-  _ <- string "urn:"
-
+pServiceType :: Parser ServiceType
+pServiceType = do
+  void $ string "urn:"
   -- pick constructor (see `deviceType`)
-  constr <- choice [ StandardService
-                      <$ try (string "schemas-upnp-org:service:")
-                   , NonStandardService
-                      <$> manyTill anyChar (string ":service:")
-                   ]
-  constr <$> manyTill anyChar colon
-         <*> many anyChar
+  ServiceType <$> manyTill anyChar (string ":service:")
+              <*> manyTill anyChar colon
+              <*> many anyChar
 
 parseServiceId :: String -> Either ParseError ServiceId
-parseServiceId = parse serviceId "ServiceId"
+parseServiceId = parse pServiceId "ServiceId"
 
-serviceId :: Parser ServiceId
-serviceId = do
-  _ <- string "urn:"
+pServiceId :: Parser ServiceId
+pServiceId = do
+  void $ string "urn:"
   -- pick constructor (see `deviceType`)
-  constr <- choice [ StandardServiceId
-                      <$ try (string "upnp-org:serviceId:")
-                   , NonStandardServiceId
-                      <$> manyTill anyChar (string ":serviceId:")
-                   ]
-  constr <$> many anyChar
+  ServiceId <$> manyTill anyChar (string ":serviceId:")
+            <*> many anyChar
 
 --------------------------------------------------------------------------------
 -- Helper

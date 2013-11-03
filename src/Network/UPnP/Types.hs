@@ -16,16 +16,21 @@ data Device
 data Service
 
 data DeviceType
-  = StandardDevice           String String
-  | NonStandardDevice String String String
+  = DeviceType { deviceVendorDomain :: String
+               , deviceType         :: String
+               , deviceVersion      :: String
+               }
   deriving (Show, Eq)
 
 data ServiceType
-  = StandardService           String String
-  | NonStandardService String String String
+  = ServiceType { serviceVendorDomain :: String
+                , serviceType         :: String
+                , serviceVersion      :: String
+                }
   deriving (Show, Eq)
 
 data ServiceId
-  = StandardServiceId           String
-  | NonStandardServiceId String String
+  = ServiceId   { serviceIdVendorDomain :: String
+                , serviceId             :: String
+                }
   deriving (Show, Eq)
