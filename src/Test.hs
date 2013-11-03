@@ -30,7 +30,8 @@ showDeviceInfo dev = do
 
 discover :: IO ()
 discover = do
-  let ssdp = ssdpSearch UpnpRootDevice Nothing Nothing
+  let ssdp = ssdpSearch (UrnDevice "schemas-upnp-org" "InternetGatewayDevice" "1")
+                        Nothing Nothing
   results <- sendSearch ssdp
   forM_ results $ \(from, msg) -> do
 
@@ -72,6 +73,6 @@ findWANIPConnection1s = do
   
 main :: IO ()
 main = withSocketsDo $ do
-  --discover
+  discover
   --getDescOfFirstIGD
-  findWANIPConnection1s
+  --findWANIPConnection1s

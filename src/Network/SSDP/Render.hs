@@ -5,7 +5,6 @@
 module Network.SSDP.Render where
 
 import Data.List
-import Data.Maybe
 import Network.SSDP.Types
 
 instance Renderable ST where
@@ -23,13 +22,13 @@ instance Renderable UUID where
 
 instance Renderable (SSDP a) where
   render ssdp = intercalate "\r\n" $
-    ssdpStartingLine ssdp : mapMaybe renderHeader (ssdpHeaders ssdp)
+    ssdpStartingLine ssdp : map renderHeader (ssdpHeaders ssdp)
     ++ [ "\r\n" ]
 
-renderHeader :: Header -> Maybe String
-renderHeader (k :- x)       = Just $ k ++ ": " ++ x
+renderHeader :: Header -> String
+renderHeader (k :- x)       = k ++ ": " ++ x
 renderHeader (k :? Just x)  = renderHeader (k :- x)
-renderHeader (_ :? Nothing) = Nothing
+renderHeader (k :? Nothing) = k ++ ":"
 
 instance Renderable String where
   render s = s

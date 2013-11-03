@@ -6,7 +6,8 @@ module Network.SSDP.Parser
 
 import Control.Applicative
 import Control.Monad
-import Text.ParserCombinators.Parsec hiding (many, optional)
+import Data.Char
+import Text.ParserCombinators.Parsec hiding (many, optional, spaces)
 
 import Network.SSDP.UUID
 import Network.SSDP.Types
@@ -46,18 +47,17 @@ htmlNewLine = string "\r\n"
 
 notify, httpok :: Parser String
 notify  = string "NOTIFY * HTTP/1.1"
---msearch = string "M-SEARCH * HTTP/1.1"
 httpok  = string "HTTP/1.1 200 OK"
-
---startLine :: Parser String
---startLine = choice [ notify, msearch, httpok ]
 
 header :: Parser Header
 header = do
   name <- manyTill anyChar colon 
   _ <- spaces
-  val <- manyTill anyChar $ lookAhead htmlNewLine
-  return $ name :- val
+  choice [ (name :? Nothing)
+            <$ lookAhead htmlNewLine
+         , (name :-)
+            <$> manyTill anyChar (lookAhead htmlNewLine)
+         ]
 
 headers :: Parser [Header]
 headers = do
@@ -77,7 +77,10 @@ uuid = do
   return $ mkUUID (a,b,c,d,e)
 
 hexOctet :: Parser [Char]
-hexOctet = count 2 hexDigit
+hexOctet = count 2 hexDigit <?> "octet"
 
 colon :: Parser Char
-colon = char ':'
+colon = char ':' <?> ":"
+
+spaces :: Parser ()
+spaces = skipMany (satisfy (\c -> isSpace c && c /= '\n' && c /= '\r')) <?> "white space"
