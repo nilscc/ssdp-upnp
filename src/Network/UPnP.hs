@@ -345,7 +345,10 @@ getArguments (UpnpXml (Just actions) _ (pickArguments -> xml)) =
         | name <- names
         | dir <- directions
         | relsv <- relsvars
-        , let Just sv = getStateVariableByName relsv actions
+          -- use do notation to avoid irrefutable pattern errors.
+          -- invalid arguments (with missing state variables) will get ignored
+          -- this way
+        , Just sv <- return $ getStateVariableByName relsv actions
         ]
 
  where
