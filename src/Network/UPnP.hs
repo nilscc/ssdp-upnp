@@ -1,5 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Network.UPnP
   ( -- * Device description
@@ -24,6 +25,8 @@ module Network.UPnP
   , getActionByName
   , getArguments
   , ArgumentDesc (..), StateVariable (..), InOut(..), ValueRange (..)
+    -- * Control
+  , prepareStatement
     -- ** Other
   , getStringValue, getRequiredStringValue
   ) where
@@ -33,6 +36,7 @@ import Control.Monad.Trans
 import Control.Monad.Error
 import Data.Maybe
 import Data.Monoid
+import Data.List
 import Text.XML.Light
 import Network.URI
 import Network.HTTP
@@ -40,6 +44,7 @@ import Network.HTTP
 import Network.SSDP
 import Network.UPnP.Types
 import Network.UPnP.Parser
+import Network.UPnP.Render
 
 require :: Monad m => Maybe a -> ErrorT String m a
 require = maybe (fail "Unexpected Nothing") return 
@@ -62,7 +67,7 @@ requestDeviceDescription ssdp = runErrorT $ do
       els  = onlyElems xml
       devs = pickChildren (hasElName "device") $ els
   case devs of
-    [dev] -> return $ UpnpXml Nothing uri [dev]
+    [dev] -> return $ UpnpXml Nothing uri Nothing Nothing [dev]
     _     -> fail "Unexpected number of <device> tags."
  where
 
@@ -97,7 +102,7 @@ pickStringValues els =
 
 -- | Find a optional string valued device property
 getStringValue :: String -> UpnpXml a -> Maybe String
-getStringValue s (UpnpXml _ _ dev) =
+getStringValue s (UpnpXml _ _ _ _ dev) =
   case pickChildren (hasElName s) dev of
     [elContent -> [Text (cdData -> str)]] -> Just str
     _ -> Nothing
@@ -132,8 +137,8 @@ getModelName    = getRequiredStringValue "modelName"
 getUDN          = getRequiredStringValue "UDN"
 
 getDeviceList :: Upnp Device -> [Upnp Device]
-getDeviceList upnp@(UpnpXml _ uri dev) =
-  map (UpnpXml (Just upnp) uri . return) $
+getDeviceList upnp@(UpnpXml _ uri _ _ dev) =
+  map (UpnpXml (Just upnp) uri Nothing Nothing . return) $
      pickTag "deviceList"
   ~> pickTag "device"
    $ dev
@@ -146,10 +151,11 @@ standardService :: String -> String -> ServiceType
 standardService = ServiceType "schemas-upnp-org"
 
 getServiceList :: Upnp Device -> [Upnp Service]
-getServiceList upnp@(UpnpXml _ uri dev) = map (UpnpXml (Just upnp) uri . return) $
-     pickTag "serviceList"
-  ~> pickTag "service"
-   $ dev
+getServiceList upnp@(UpnpXml _ uri _ _ dev) =
+  map (UpnpXml (Just upnp) uri Nothing Nothing . return) $
+       pickTag "serviceList"
+    ~> pickTag "service"
+     $ dev
 
 getServiceType :: Upnp Service -> Maybe ServiceType
 getServiceType d =
@@ -188,13 +194,13 @@ findService sty dev =
 
 requestActions
   :: Upnp Service -> IO (Either String (Upnp Actions))
-requestActions service@(UpnpXml _ uri _) = runErrorT $ do
+requestActions service@(UpnpXml _ uri _ _ _) = runErrorT $ do
   let scpduri = getSCPDURL service `relativeTo` uri
   res <- liftIO $ simpleHTTP $ getRequest $ show scpduri
   bdy <- rspBody <$> requireRight res
   let xml     = parseXML bdy
       els     = onlyElems xml
-  return $ UpnpXml (Just service) scpduri els
+  return $ UpnpXml (Just service) scpduri Nothing Nothing els
 
 -- helper:
 pickActions :: [Element] -> [Element]
@@ -204,7 +210,7 @@ pickActions =
 
 -- | Get all names of the supported actions of a service
 getActionNames :: Upnp Actions -> [String]
-getActionNames (UpnpXml _ _ xml) =
+getActionNames (UpnpXml _ _ _ _ xml) =
      pickActions
   ~> pickTag "name"
   ~> pickStringValues
@@ -218,9 +224,9 @@ pickActionByName name =
                 . onlyElems . elContent)
 
 getActionByName :: String -> Upnp Actions -> Maybe (Upnp Action)
-getActionByName name actions@(UpnpXml _ uri xml) =
+getActionByName name actions@(UpnpXml _ uri _ _ xml) =
   case pickActionByName name xml of
-    action@[_] -> Just $ UpnpXml (Just actions) uri action
+    action@[_] -> Just $ UpnpXml (Just actions) uri Nothing (Just name) action
     _          -> Nothing
 
 -- helper:
@@ -236,7 +242,7 @@ pickStateVariables =
   ~> pickTag "stateVariable"
 
 getStateVariableByName :: String -> Upnp Actions -> Maybe StateVariable
-getStateVariableByName name (UpnpXml _ _ xml) =
+getStateVariableByName name (UpnpXml _ _ _ _ xml) =
      pickStateVariables
   ~> filterByNameValue name
   ~> map toStateVar
@@ -332,7 +338,7 @@ getStateVariableByName name (UpnpXml _ _ xml) =
           }
 
 getArguments :: Upnp Action -> [ArgumentDesc]
-getArguments (UpnpXml (Just actions) _ (pickArguments -> xml)) =
+getArguments (UpnpXml (Just actions) _ _ _ (pickArguments -> xml)) =
 
   let names      = pickTag "name"      ~> pickStringValues
                  $ xml
@@ -357,3 +363,79 @@ getArguments (UpnpXml (Just actions) _ (pickArguments -> xml)) =
   inOrOut _     = In -- should hopefully never happen -> FIXME?
 
 getArguments _ = []
+
+
+--------------------------------------------------------------------------------
+-- Control
+
+-- | Build a statement without argument verification
+buildStatement :: Upnp Action -> [Argument] -> Maybe (Upnp Statement)
+buildStatement action@(UpnpXml par uri (Just sty) (Just aname) _) args
+  | Just (service :: Upnp Service) <- par >>= getUpnpParent
+  = let
+        control :: URI
+        control = getControlURL service
+
+        -- action invocation!
+        invoc :: [Element]
+        invoc = renderArguments sty aname args
+
+     in Just $ UpnpXml (Just action) (control `relativeTo` uri) Nothing Nothing invoc
+
+buildStatement _ _ = Nothing
+
+-- | Prepare a statement with argument verification
+prepareStatement :: Upnp Action -> [Argument] -> Maybe (Upnp Statement)
+prepareStatement action args
+
+  | and [ validArg (getArguments action) arg | arg <- args ] =
+    buildStatement action args
+
+  | otherwise =
+    Nothing
+
+ where
+
+  -- Check if an argument matches the given description
+  validArg :: [ArgumentDesc] -> Argument -> Bool
+  validArg descs (Argument name val)
+
+      -- first, find the description with the right name
+    | Just desc <- find (\d -> argumentDescName d == name) descs
+    , let svar = argumentDescStateVariable desc
+      -- only accept "in" arguments
+    , argumentDescDirection desc == In
+      -- make sure the types match
+    , typeMatches (svarType svar) val
+      -- make sure only allowed values (if any) are used
+    , valueAllowed (svarAllowedValues svar) val
+      -- TODO: check value range
+    = True
+
+    | otherwise
+    = False
+
+  typeMatches ty val = case (ty, val) of
+      (Upnp_ui1       , UpnpVal_ui1         _) -> True
+      (Upnp_ui2       , UpnpVal_ui2         _) -> True
+      (Upnp_ui4       , UpnpVal_ui4         _) -> True
+      (Upnp_i1        , UpnpVal_i1          _) -> True
+      (Upnp_i2        , UpnpVal_i2          _) -> True
+      (Upnp_i4        , UpnpVal_i4          _) -> True
+      (Upnp_int       , UpnpVal_int         _) -> True
+      (Upnp_r4        , UpnpVal_r4          _) -> True
+      (Upnp_r8        , UpnpVal_r8          _) -> True
+      (Upnp_number    , UpnpVal_number      _) -> True
+      (Upnp_fixed_14_4, UpnpVal_fixed_14_4  _) -> True
+      (Upnp_float     , UpnpVal_float       _) -> True
+      (Upnp_char      , UpnpVal_char        _) -> True
+      (Upnp_string    , UpnpVal_string      _) -> True
+      (Upnp_boolean   , UpnpVal_boolean     _) -> True
+      (Upnp_bin_base64, UpnpVal_bin_base64  _) -> True
+      (Upnp_bin_hex   , UpnpVal_bin_hex     _) -> True
+      (Upnp_uri       , UpnpVal_uri         _) -> True
+      (Upnp_uuid      , UpnpVal_uuid        _) -> True
+      _ -> False
+
+  valueAllowed (Just vals) val = render val `elem` vals
+  valueAllowed Nothing     _   = True
