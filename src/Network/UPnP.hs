@@ -1,6 +1,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PatternGuards #-}
 
 module Network.UPnP
   ( -- * Device description

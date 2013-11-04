@@ -26,4 +26,5 @@ executable ssdp-test
 
   Build-depends:       
     base == 4.*, network, network-multicast, mtl, stm, transformers,
+    bytestring,
     parsec, xml, HTTP
